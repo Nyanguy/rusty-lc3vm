@@ -1,0 +1,12 @@
+name: LC3VM
+version: "0.1"
+author: iy <github.com/Nyanguy>
+about: It's the LC3VM!
+
+args:
+  - image:
+    short: i
+    long: image
+    value_name: IMAGE
+    about: "A path to the LC3 image"
+    required: true
