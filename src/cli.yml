@@ -10,3 +10,4 @@ args:
     value_name: IMAGE
     about: "A path to the LC3 image"
     required: true
+    index: 1

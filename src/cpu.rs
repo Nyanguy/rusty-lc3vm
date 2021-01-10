@@ -1,78 +1,90 @@
 use std::u16;
 use std::io::{Error, Read};
 use std::fs::File;
-use crate::instructions::INSTRUCTION;
+use device_query::{DeviceQuery, DeviceState, Keycode};
+use crate::instructions::{self, Instruction};
 
-const NUM_OF_REGISTERS: u8 = 9;
-
-pub enum Register {
-    R0 = 0,
-    R1 = 1,
-    R2 = 2,
-    R3 = 3,
-    R4 = 4,
-    R5 = 5,
-    R6 = 6,
-    R7 = 7,
-    PC = 8,  // Program counter
-}
-
-impl Register {
-    pub fn from(n: u16) -> Self {
-        match n {
-            0 => Register::R0,
-            1 => Register::R1,
-            2 => Register::R2,
-            3 => Register::R3,
-            4 => Register::R4,
-            5 => Register::R5,
-            6 => Register::R6,
-            7 => Register::R7,
-            8 => Register::PC,
-            _ => unreachable!("Register with <{}> addr does not exist", n),
-        }
-    }
-}
-
+const NUM_OF_REGISTERS: u16 = 8;
+const MR_KBSR: u16 = 0xFE00; // keyboard status
+const MR_KBDR: u16 = 0xFE02; // keyboard data
 
 pub struct Flags {
-    neg: bool, 
-    zer: bool, 
-    pos: bool
+    pub neg: bool, 
+    pub zer: bool, 
+    pub pos: bool
 }
 
-fn sign_extend(x: u16, bit_count: u8) -> u16 {
-    if ((x >> (bit_count - 1)) & 1) == 1 {
-        x | (0xFFFF << bit_count)
-    } else {
-        x
-    }
-}
+// fn check_key() -> bool {
+//     const STDIN_FILENO: i32 = 0;
 
+//     let mut readfds = FdSet::new();
+//     readfds.insert(STDIN_FILENO);
+
+//     match select(None, &mut readfds, None, None, &mut TimeVal::zero()) {
+//         Ok(value) => value == 1,
+//         Err(_) => false,
+//     }
+// }
 
 pub struct CPU {
-    pub registers: [u16; NUM_OF_REGISTERS as usize],
-    pub memory: [u16; u16::MAX as usize],
-    flags: Flags,
-    instruction: Option<INSTRUCTION>,
+    registers: [u16; NUM_OF_REGISTERS as usize],
+    memory: [u16; u16::MAX as usize],
+    pub pc: u16,  // PROGRAMM COUNTER
+    pub flags: Flags,
+    instruction: Option<Instruction>,
     pub is_finished: bool,
 }
 
 impl CPU {
     pub fn initiate() -> Self {
-        let mut cpu = CPU {
+        CPU {
             registers: [0; NUM_OF_REGISTERS as usize],
             memory:  [0; u16::MAX as usize],
+            pc: 0x3000,
             flags: Flags {neg: false, zer: false, pos: false},
             instruction: None,
             is_finished: false,
-        };
-        cpu.registers[Register::PC as usize] = 0x3000; // a default address.
-        cpu
+        }
+    }
+
+    pub fn register_read(&self, reg: u16) -> u16 {
+        if reg >= NUM_OF_REGISTERS {
+            panic!("R{} does not exist! Bad register access", reg)
+        } else {
+            self.registers[reg as usize]
+        }
+    }
+
+    pub fn register_write(&mut self, reg: u16, val: u16) {
+        if reg >= NUM_OF_REGISTERS {
+            panic!("R{} does not exist! Bad register access", reg)
+        } else {
+            self.registers[reg as usize] = val;
+        }
+    }
+
+    pub fn memory_read(&self, addr: u16) -> u16 {
+        // if addr == MR_KBSR {
+        //     let device_state = DeviceState::new();
+        //     let keys: Vec<Keycode> = device_state.get_keys();
+        //     if false {
+        //         let mut buf = [0;1];
+        //         std::io::stdin().read_exact(&mut buf).unwrap();
+        //         self.memory[MR_KBSR as usize] = 1 << 15;
+        //         self.memory[MR_KBDR as usize] = buf[0] as u16;
+        //     } else {
+        //         self.memory[MR_KBSR as usize] = 0;
+        //     }
+        // }
+        self.memory[addr as usize]
+    }
+    
+    pub fn memory_write(&mut self, addr: u16, value: u16) {
+        self.memory[addr as usize] = value;
     }
 
 
-    fn update_flags(&mut self, reg_value: u16) {
+    pub fn update_flags(&mut self, reg_value: u16) {
         if reg_value == 0 {self.flags.pos = false; self.flags.neg = false; self.flags.zer = true}
         else if reg_value >> 15 == 1 {self.flags.pos = false; self.flags.neg = true; self.flags.zer = false}
         else {self.flags.pos = true; self.flags.neg = false; self.flags.zer = false}
@@ -90,7 +102,7 @@ impl CPU {
         // read the first address
         let mut iteration = img.iter();
         let mut addr = match iteration.next() {
-            Some(addr) => {self.registers[Register::PC as usize] = *addr; *addr as usize},
+            Some(addr) => {self.pc = *addr; *addr as usize},
             None => panic!("Image is empty! (Least than 2 bytes)")
         };
 
@@ -102,12 +114,19 @@ impl CPU {
         Ok(())
     }
 
-    pub fn fetch_instruction(&self) {
-        
+    pub fn fetch_instruction(&mut self) {
+        let dword = self.memory_read(self.pc);
+        self.instruction = Some(instructions::parse(dword));
     }
 
-    pub fn execute(&self) {
+    pub fn execute(&mut self) {
+        let inst = match self.instruction {
+            Some(i) => i,
+            None => panic!("No instruction was loaded")
+        };
 
+        instructions::execute(inst, self);
+        self.pc += 1;
     }
 
     pub fn terminate(&self) {

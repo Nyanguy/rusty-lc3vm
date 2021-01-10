@@ -1,7 +1,7 @@
 mod instructions;
 mod cpu;
 
-use std::path::Path;
+
 
 use clap::{App, load_yaml};
 use cpu::CPU;
@@ -19,7 +19,7 @@ fn parse_args() -> String {
 fn main() {
     let file = parse_args();
     let mut processor = CPU::initiate();
-    processor.load_instructions(file);
+    processor.load_instructions(file).unwrap();
     loop {
         processor.fetch_instruction();
         processor.execute();
